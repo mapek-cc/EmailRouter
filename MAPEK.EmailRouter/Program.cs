@@ -13,6 +13,7 @@ namespace EmailRouter
             Log.Logger = new LoggerConfiguration()
                 .Enrich.FromLogContext()
                 .WriteTo.Console(outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+                .MinimumLevel.Verbose()
                 .CreateLogger();
 
             using var loggerFactory = new SerilogLoggerFactory(Log.Logger, true);
