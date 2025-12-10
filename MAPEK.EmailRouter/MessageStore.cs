@@ -1,4 +1,5 @@
 using System.Buffers;
+using Microsoft.Extensions.Logging;
 using System.Text;
 using MimeKit;
 using SendGrid;
@@ -11,19 +12,39 @@ namespace EmailRouter;
 
 public class MessageStore : IMessageStore
 {
+    private readonly ILogger<MessageStore> _logger;
+
+    public MessageStore(ILogger<MessageStore> logger)
+    {
+        _logger = logger;
+    }
+
     public async Task<SmtpResponse> SaveAsync(ISessionContext context, IMessageTransaction transaction,
         ReadOnlySequence<byte> buffer, CancellationToken cancellationToken)
     {
         var text = Encoding.UTF8.GetString(buffer.ToArray());
-        var message = await MimeMessage.LoadAsync(new MemoryStream(buffer.ToArray()), cancellationToken);
+        var payload = buffer.ToArray();
+        var message = await MimeMessage.LoadAsync(new MemoryStream(payload), cancellationToken);
+        var payloadSizeKb = Math.Round(payload.Length / 1024d, 2);
 
-        await HandleMessageAsync(message);
+        await HandleMessageAsync(message, payloadSizeKb);
 
         return SmtpResponse.Ok;
     }
 
-    private static async Task HandleMessageAsync(MimeMessage message)
+    private async Task HandleMessageAsync(MimeMessage message, double? payloadSizeKb = null)
     {
+        var fromSummary = message.From?.ToString() ?? "<unknown>";
+        var toSummary = message.To.Mailboxes.Any()
+            ? string.Join(", ", message.To.Mailboxes.Select(mb => mb.ToString()))
+            : "<none>";
+        var payloadDescriptor = payloadSizeKb.HasValue
+            ? $"({payloadSizeKb.Value:F2} KB)"
+            : string.Empty;
+
+        _logger.LogInformation("Relaying email '{Subject}' from {From} to {To} {PayloadDescriptor}",
+            message.Subject, fromSummary, toSummary, payloadDescriptor);
+
         try
         {
             var apiKey = Environment.GetEnvironmentVariable("SG_API_KEY");
@@ -45,6 +66,7 @@ public class MessageStore : IMessageStore
             foreach (var cc in message.Cc.Mailboxes)
                 sendGridMessage.AddCc(new EmailAddress(cc.Address, cc.Name));
 
+            var attachmentCount = 0;
             foreach (var attachment in message.Attachments)
             {
                 using var memoryStream = new MemoryStream();
@@ -54,14 +76,17 @@ public class MessageStore : IMessageStore
                 var bytes = memoryStream.ToArray();
                 sendGridMessage.AddAttachment(part.FileName, Convert.ToBase64String(bytes),
                     part.ContentType.MimeType);
+                ++attachmentCount;
             }
 
             var response = await client.SendEmailAsync(sendGridMessage);
-            Console.WriteLine($"Email sent to SendGrid: Status code {response.StatusCode}");
+            _logger.LogInformation(
+                "Email sent to SendGrid with status code {StatusCode}. Attachments: {AttachmentCount}",
+                response.StatusCode, attachmentCount);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error forwarding email: {ex.Message}");
+            _logger.LogError(ex, "Error forwarding email '{Subject}'", message.Subject);
         }
     }
 }
