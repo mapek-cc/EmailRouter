@@ -17,15 +17,19 @@ public class MailboxFilter : IMailboxFilter
     public Task<bool> CanAcceptFromAsync(ISessionContext context, IMailbox from, int size,
         CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Accepting message from {From} with size {Size}", from?.ToString(), size);
+        if (size != 0)
+            _logger.LogInformation("Accepting message from {User} (Server: {Host}) with size {Size}", from.User, from.Host, size);
+        else
+            _logger.LogInformation("Accepting message from {User} (Server: {Host})", from.User, from.Host);
+            
         return Task.FromResult(true);
     }
 
     public Task<bool> CanDeliverToAsync(ISessionContext context, IMailbox to, IMailbox from,
         CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Delivering message from {From} to {To}", from?.ToString(),
-            to?.ToString());
+        _logger.LogInformation("Delivering message from {from} (Server: {fromHost}) to {to} (Server: {toHost})",
+            from?.User, from?.Host, to?.User, to?.Host);
         return Task.FromResult(true);
     }
 }
