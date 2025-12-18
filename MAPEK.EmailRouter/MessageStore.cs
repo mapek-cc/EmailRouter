@@ -82,7 +82,7 @@ public class MessageStore : IMessageStore
             var response = await client.SendEmailAsync(sendGridMessage);
             _logger.LogInformation(
                 "Email sent to SendGrid with status code {StatusCode}. Attachments: {AttachmentCount}",
-                response.StatusCode, attachmentCount);
+                response.StatusCode, (attachmentCount == 0 ? "none" : attachmentCount.ToString()));
         }
         catch (Exception ex)
         {
